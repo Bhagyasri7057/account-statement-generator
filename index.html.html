@@ -1,0 +1,1036 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Account Statement Generator</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap">
+<style>
+/* Layout: one centred column. A quiet top bar, a page header with one primary action,
+   cards for summaries and tables, and a statement that reads like a printed document. */
+:root{
+  --bg:#F3F5F8; --surface:#FFFFFF; --surface-2:#F8FAFC; --ink:#131D2A; --muted:#5A6779; --line:#DDE3EC;
+  --accent:#1D4D7A; --accent-ink:#FFFFFF; --accent-soft:#E7EEF6;
+  --credit:#16713F; --credit-soft:#E4F3EA; --debit:#A3271D; --debit-soft:#FBE8E6;
+  --focus:#2F7FD1; --shadow:0 1px 2px rgba(19,29,42,.05),0 6px 20px rgba(19,29,42,.06);
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0D131B; --surface:#152029; --surface-2:#11191F; --ink:#E5EBF2; --muted:#98A5B6; --line:#263341;
+    --accent:#8DBDEB; --accent-ink:#0D131B; --accent-soft:#1A2B3C;
+    --credit:#5FC893; --credit-soft:#13291E; --debit:#F3847A; --debit-soft:#2F1816;
+    --focus:#8DBDEB; --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0D131B; --surface:#152029; --surface-2:#11191F; --ink:#E5EBF2; --muted:#98A5B6; --line:#263341;
+  --accent:#8DBDEB; --accent-ink:#0D131B; --accent-soft:#1A2B3C;
+  --credit:#5FC893; --credit-soft:#13291E; --debit:#F3847A; --debit-soft:#2F1816;
+  --focus:#8DBDEB; --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));-webkit-font-smoothing:antialiased}
+h1,h2,h3{font-family:"Space Grotesk",Inter,system-ui,sans-serif;margin:0;line-height:1.2;text-wrap:balance;letter-spacing:-.01em}
+h1{font-size:26px} h2{font-size:18px}
+p{margin:0}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:6px}
+.wrap{max-width:1200px;margin:0 auto}
+.page{padding-bottom:48px}
+.muted{color:var(--muted)}
+.small{font-size:12px}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.amt-credit{color:var(--credit)}
+.amt-debit{color:var(--debit)}
+.stack{display:grid;gap:16px}
+.section{margin-top:20px}
+
+/* Top bar */
+.appbar{border-bottom:1px solid var(--line);padding:14px 0}
+.bar-inner{display:flex;align-items:center;gap:20px;flex-wrap:wrap;justify-content:space-between}
+.brand{display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--ink)}
+.brand-mark{display:grid;place-items:center;width:36px;height:36px;border-radius:9px;background:var(--accent);color:var(--accent-ink);font:700 14px "Space Grotesk",Inter,sans-serif;letter-spacing:.02em;flex:none}
+.brand-name{font:600 15px "Space Grotesk",Inter,sans-serif}
+.nav{display:flex;gap:4px;overflow-x:auto;max-width:100%}
+.nav a{padding:8px 12px;border-radius:8px;color:var(--muted);text-decoration:none;font-weight:500;white-space:nowrap}
+.nav a:hover{color:var(--ink);background:var(--surface-2)}
+.nav a[aria-current="page"]{color:var(--accent);background:var(--accent-soft);font-weight:600}
+.userbox{display:flex;align-items:center;gap:12px}
+.user-meta{text-align:right;line-height:1.3;display:grid;gap:4px;justify-items:end}
+.user-meta strong{font-size:13px}
+@media (max-width:560px){.user-meta{display:none}}
+
+/* Page header */
+.page-head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin:28px 0 4px}
+.page-head p{margin-top:4px}
+
+/* Cards and stats */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);min-width:0}
+.card-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px}
+.stat{padding:18px 20px}
+.stat .label{display:block;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.stat .value{display:block;margin-top:8px;font:600 22px/1.25 "Space Grotesk",Inter,sans-serif;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+
+/* Tables */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;padding:10px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
+tbody tr:last-child td{border-bottom:0}
+.empty{padding:36px 20px;text-align:center;color:var(--muted)}
+.empty strong{display:block;color:var(--ink);margin-bottom:4px}
+.actions{white-space:nowrap;text-align:right}
+.actions .btn+.btn{margin-left:6px}
+.pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.pill.credit{background:var(--credit-soft);color:var(--credit)}
+.pill.debit{background:var(--debit-soft);color:var(--debit)}
+.pill.role{background:var(--accent-soft);color:var(--accent)}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;font:inherit;font-weight:600;padding:9px 16px;border-radius:8px;border:1px solid transparent;cursor:pointer;text-decoration:none;white-space:nowrap;line-height:1.2}
+.btn-sm{padding:6px 10px;font-size:13px}
+.btn-primary{background:var(--accent);color:var(--accent-ink)}
+.btn-primary:hover{filter:brightness(1.08)}
+.btn-ghost{background:var(--surface);border-color:var(--line);color:var(--ink)}
+.btn-ghost:hover{background:var(--surface-2)}
+.btn-danger{background:var(--surface);border-color:var(--line);color:var(--debit)}
+.btn-danger-solid{background:var(--debit);color:var(--accent-ink)}
+.btn-block{width:100%}
+
+/* Forms */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.full{grid-column:1/-1}
+.field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.field label{font-weight:600;font-size:13px}
+.field input,.field select{font:inherit;width:100%;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}
+.field.invalid input,.field.invalid select{border-color:var(--debit)}
+.err{color:var(--debit);font-size:12px}
+.err:empty{display:none}
+.help{font-size:12px;color:var(--muted)}
+.toolbar{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;align-items:end;padding:18px 20px}
+.actions-row{display:flex;gap:8px;flex-wrap:wrap}
+@media (max-width:600px){.form-grid{grid-template-columns:1fr}}
+
+/* Statement document */
+.out-actions{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.doc{padding:32px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
+.doc-top{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;padding-bottom:20px;border-bottom:2px solid var(--ink)}
+.doc-title{font:700 22px "Space Grotesk",Inter,sans-serif;margin-top:6px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0;align-items:baseline}
+.kv dt{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+.kv dd{margin:0;font-weight:500;overflow-wrap:anywhere}
+.doc-parties{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px;padding:20px 0}
+.summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:24px}
+.summary div{padding:14px 16px;background:var(--surface-2);border-right:1px solid var(--line)}
+.summary div:last-child{border-right:0}
+.summary span{display:block;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+.summary strong{display:block;margin-top:6px;font:600 17px "Space Grotesk",Inter,sans-serif;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.summary .hl{background:var(--accent-soft)}
+@media (max-width:640px){
+  .summary{grid-template-columns:1fr 1fr}
+  .summary div:nth-child(2){border-right:0}
+  .summary div:nth-child(-n+2){border-bottom:1px solid var(--line)}
+}
+.doc tfoot td{font-weight:700;border-top:2px solid var(--ink);border-bottom:0}
+.doc-foot{margin-top:20px;font-size:12px;color:var(--muted)}
+
+/* Login */
+.login{max-width:420px;margin:48px auto 0}
+.login .card{padding:28px}
+.login-head{display:flex;gap:14px;align-items:center;margin-bottom:22px}
+.demo{margin-top:20px;padding:14px 16px;background:var(--surface-2);border:1px dashed var(--line);border-radius:10px;font-size:13px}
+.demo dl{margin:8px 0 0;display:grid;grid-template-columns:auto 1fr;gap:4px 12px}
+.demo dt{color:var(--muted)}
+.demo dd{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
+
+
+/* Separate registration and sign-in screens */
+.auth-switch{margin-top:16px;text-align:center;color:var(--muted);font-size:13px}
+.auth-switch a{font-weight:700;text-decoration:none}
+.auth-switch a:hover{text-decoration:underline}
+.auth-note{padding:12px 14px;background:var(--accent-soft);border-radius:9px;color:var(--ink);font-size:12px}
+
+/* Dialog */
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink);padding:0;width:min(560px,calc(100vw - 32px));box-shadow:0 24px 64px rgba(0,0,0,.28)}
+dialog::backdrop{background:rgba(9,14,20,.55)}
+.dlg-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:18px 22px;border-bottom:1px solid var(--line)}
+.dlg-body{padding:22px}
+.dlg-foot{display:flex;justify-content:flex-end;gap:10px;padding:16px 22px;border-top:1px solid var(--line);flex-wrap:wrap}
+.review{display:grid;grid-template-columns:auto 1fr;gap:10px 18px;margin:0}
+.review dt{color:var(--muted)}
+.review dd{margin:0;font-weight:500;overflow-wrap:anywhere}
+.icon-btn{background:none;border:0;color:var(--muted);font-size:22px;cursor:pointer;padding:2px 8px;border-radius:6px;line-height:1}
+
+/* Toasts */
+.toasts{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));display:grid;gap:8px;z-index:50;width:min(420px,calc(100vw - 32px))}
+.toast{background:var(--ink);color:var(--bg);padding:12px 16px;border-radius:10px;box-shadow:var(--shadow);font-weight:500}
+.toast.error{background:var(--debit);color:var(--accent-ink)}
+
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="wrap">
+  <header class="appbar" id="appbar" hidden>
+    <div class="bar-inner">
+      <a class="brand" href="#dashboard"><span class="brand-mark" aria-hidden="true">AS</span><span class="brand-name">Account Statement Generator</span></a>
+      <nav class="nav" id="nav" aria-label="Main">
+        <a href="#dashboard" data-route="dashboard">Dashboard</a>
+        <a href="#accounts" data-route="accounts">Accounts</a>
+        <a href="#transactions" data-route="transactions">Transactions</a>
+        <a href="#statement" data-route="statement">Statements</a>
+      </nav>
+      <div class="userbox">
+        <div class="user-meta"><strong id="uName"></strong><span class="pill role" id="uRole"></span></div>
+        <button class="btn btn-ghost btn-sm" type="button" data-action="logout">Sign out</button>
+      </div>
+    </div>
+  </header>
+  <main id="view" class="page"></main>
+</div>
+
+<dialog id="dlg" aria-labelledby="dlgTitle">
+  <div class="dlg-head"><h2 id="dlgTitle"></h2><button class="icon-btn" type="button" data-close aria-label="Close">&times;</button></div>
+  <div class="dlg-body" id="dlgBody"></div>
+  <div class="dlg-foot" id="dlgFoot"></div>
+</dialog>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+(() => {
+'use strict';
+const STORE_KEY = 'asg.store.v1';
+const SESSION_KEY = 'asg.session.v1';
+const ROUTES = ['dashboard', 'accounts', 'transactions', 'statement'];
+const ACCOUNT_TYPES = ['Savings', 'Current', 'Fixed Deposit'];
+
+const $ = (s, r = document) => r.querySelector(s);
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const round2 = n => Math.round(n * 100) / 100;
+const inr = n => new Intl.NumberFormat('en-IN', {style:'currency', currency:'INR', minimumFractionDigits:2, maximumFractionDigits:2}).format(n);
+const plain = n => (n < 0 ? '-' : '') + 'Rs. ' + Math.abs(n).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
+const pad = n => String(n).padStart(2, '0');
+const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; };
+const fmtDate = iso => { const [y, m, d] = iso.split('-').map(Number); return new Date(y, m-1, d).toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'}); };
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
+const sumOf = list => round2(list.reduce((s, t) => s + t.amount, 0));
+const signed = t => (t.type === 'Credit' ? t.amount : -t.amount);
+const sortTx = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (a.createdAt || 0) - (b.createdAt || 0));
+
+let db = null;
+let currentUser = null;
+let authView = 'login';
+let pendingConfirm = null;
+let dlgSubmit = null;
+let dlgBack = null;
+let stmt = { accountId: null, start: null, end: null, data: null };
+let txFilter = { accountId: '', from: '', to: '' };
+let loginLock = { fails: 0, until: 0 };
+
+/* ---------- Storage (per-browser; every access guarded) ---------- */
+function readStore() {
+  try { const raw = localStorage.getItem(STORE_KEY); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+}
+function persist() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(db)); return true; }
+  catch (e) { toast('Changes could not be saved in this browser. Keep this tab open.', 'error'); return false; }
+}
+function readSession() { try { return sessionStorage.getItem(SESSION_KEY); } catch (e) { return null; } }
+function writeSession(id) { try { id ? sessionStorage.setItem(SESSION_KEY, id) : sessionStorage.removeItem(SESSION_KEY); } catch (e) { /* session is optional */ } }
+
+/* ---------- Passwords: salted SHA-256, never stored in clear text ---------- */
+async function hashPassword(pw, salt) {
+  const data = new TextEncoder().encode(`${salt}:${pw}`);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/* ---------- Sample data: the SRS example (Rahul Kumar) plus a second account ---------- */
+async function seedStore() {
+  const mkUser = async (name, username, role, password, accountIds = []) => {
+    const salt = uid();
+    return { id: uid(), name, username, role, salt, hash: await hashPassword(password, salt), accountIds };
+  };
+  const a1 = { id: uid(), holder: 'Rahul Kumar', number: 'XXXX1234', type: 'Savings', opening: 10000, openedOn: '2026-04-01' };
+  const a2 = { id: uid(), holder: 'Priya Sharma', number: 'XXXX5821', type: 'Current', opening: 25000, openedOn: '2026-05-01' };
+  const tx = (accountId, date, description, type, amount) => ({ id: uid(), accountId, date, description, type, amount, createdAt: Date.now() });
+  return {
+    version: 1,
+    users: [
+      await mkUser('Operator', 'operator', 'Operator', 'Operator@2026'),
+      await mkUser('Rahul Kumar', 'rahul', 'Account Holder', 'Rahul@2026', [a1.id]),
+    ],
+    accounts: [a1, a2],
+    transactions: [
+      tx(a1.id, '2026-05-10', 'Salary credit', 'Credit', 5000),
+      tx(a1.id, '2026-06-15', 'Utility bill payment', 'Debit', 2000),
+      tx(a2.id, '2026-05-20', 'Client payment, invoice 104', 'Credit', 12000),
+      tx(a2.id, '2026-06-01', 'Office rent, June', 'Debit', 4500),
+      tx(a2.id, '2026-07-08', 'Vendor refund', 'Credit', 3200),
+      tx(a2.id, '2026-07-22', 'Internet and phone', 'Debit', 1850.5),
+    ],
+  };
+}
+
+/* ---------- Data helpers ---------- */
+function visibleAccounts() {
+  if (!currentUser) return [];
+  if (currentUser.role === 'Operator') return db.accounts;
+  const ids = currentUser.accountIds || [];
+  return db.accounts.filter(a => ids.includes(a.id));
+}
+const canEdit = () => currentUser?.role === 'Operator';
+
+function balanceOf(accountId) {
+  const a = db.accounts.find(x => x.id === accountId);
+  if (!a) return 0;
+  let bal = a.opening;
+  db.transactions.forEach(t => { if (t.accountId === accountId) bal = round2(bal + signed(t)); });
+  return bal;
+}
+function runningBalances() {
+  const map = new Map();
+  db.accounts.forEach(a => {
+    let bal = a.opening;
+    db.transactions.filter(t => t.accountId === a.id).sort(sortTx).forEach(t => {
+      bal = round2(bal + signed(t));
+      map.set(t.id, bal);
+    });
+  });
+  return map;
+}
+function buildStatement(acct, start, end) {
+  let opening = acct.opening;
+  const all = db.transactions.filter(t => t.accountId === acct.id).sort(sortTx);
+  all.forEach(t => { if (t.date < start) opening = round2(opening + signed(t)); });
+  let run = opening, credits = 0, debits = 0;
+  const rows = [];
+  all.forEach(t => {
+    if (t.date < start || t.date > end) return;
+    if (t.type === 'Credit') { credits = round2(credits + t.amount); }
+    else { debits = round2(debits + t.amount); }
+    run = round2(run + signed(t));
+    rows.push({ ...t, balance: run });
+  });
+  return { acct, start, end, opening, credits, debits, closing: round2(opening + credits - debits), rows };
+}
+function newAccountNumber() {
+  let n;
+  do { n = 'XXXX' + String(Math.floor(1000 + Math.random() * 9000)); }
+  while (db.accounts.some(a => a.number === n));
+  return n;
+}
+
+/* ---------- Startup ---------- */
+async function init() {
+  db = readStore();
+  if (!db || !Array.isArray(db.users)) { db = await seedStore(); persist(); }
+  const sid = readSession();
+  currentUser = sid ? (db.users.find(u => u.id === sid) || null) : null;
+  window.addEventListener('hashchange', render);
+  document.addEventListener('click', onClick);
+  document.addEventListener('submit', onSubmit);
+  document.addEventListener('change', onChange);
+  $('#dlg').addEventListener('click', onDialogClick);
+  $('#dlg').addEventListener('submit', e => { e.preventDefault(); if (dlgSubmit) dlgSubmit(new FormData(e.target)); });
+  render();
+}
+
+/* ---------- Form helpers ---------- */
+const field = (id, label, type, value, attrs = '', cls = '') =>
+  `<div class="field ${cls}" data-field="${id}"><label for="${id}">${label}</label><input id="${id}" name="${id}" type="${type}" value="${esc(value)}" ${attrs}><p class="err" id="${id}-err"></p></div>`;
+const select = (id, label, options, value, cls = '') =>
+  `<div class="field ${cls}" data-field="${id}"><label for="${id}">${label}</label><select id="${id}" name="${id}">${options.map(([v, l]) => `<option value="${esc(v)}"${String(v) === String(value) ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select><p class="err" id="${id}-err"></p></div>`;
+function setErrors(errs, root = '#dlgBody') {
+  const scope = typeof root === 'string' ? $(root) : root;
+  scope.querySelectorAll('[data-field]').forEach(f => {
+    const msg = errs[f.dataset.field] || '';
+    f.classList.toggle('invalid', !!msg);
+    const p = f.querySelector('.err');
+    if (p) p.textContent = msg;
+    const input = f.querySelector('input,select');
+    if (input) input.setAttribute('aria-invalid', msg ? 'true' : 'false');
+  });
+  const first = Object.keys(errs)[0];
+  if (first) { const el = document.getElementById(first); if (el) el.focus(); }
+}
+
+/* ---------- Dialog ---------- */
+function openDialog({ title, body, foot, submit = null, confirm = null, back = null }) {
+  dlgSubmit = submit; pendingConfirm = confirm; dlgBack = back;
+  $('#dlgTitle').textContent = title;
+  $('#dlgBody').innerHTML = body;
+  $('#dlgFoot').innerHTML = foot;
+  const d = $('#dlg');
+  if (!d.open) d.showModal();
+  const first = $('#dlgBody input, #dlgBody select');
+  if (first) first.focus();
+}
+function onDialogClick(e) {
+  const el = e.target.closest('[data-close],[data-confirm],[data-back]');
+  if (!el) return;
+  if (el.hasAttribute('data-close')) { $('#dlg').close(); return; }
+  if (el.hasAttribute('data-confirm')) {
+    const fn = pendingConfirm; $('#dlg').close(); if (fn) fn(); return;
+  }
+  if (el.hasAttribute('data-back')) { const fn = dlgBack; if (fn) fn(); }
+}
+function confirmDialog({ title, message, label, onYes }) {
+  openDialog({
+    title,
+    body: `<p>${message}</p>`,
+    foot: `<button class="btn btn-ghost" type="button" data-close>Cancel</button><button class="btn btn-danger-solid" type="button" data-confirm>${label}</button>`,
+    confirm: onYes,
+  });
+}
+
+/* ---------- Accounts ---------- */
+function validateAccount(fd) {
+  const errs = {};
+  const holder = String(fd.get('aHolder') || '').trim().replace(/\s+/g, ' ');
+  if (!/^[A-Za-z][A-Za-z .'-]{1,79}$/.test(holder)) errs.aHolder = 'Use 2 to 80 letters. Spaces, dots, apostrophes and hyphens are allowed.';
+  if (!ACCOUNT_TYPES.includes(fd.get('aType'))) errs.aType = 'Select an account type.';
+  const raw = String(fd.get('aOpen') || '').replace(/[,\s₹]/g, '');
+  const num = Number(raw);
+  if (raw === '') errs.aOpen = 'Enter the opening balance. Use 0 if there is none.';
+  else if (Number.isNaN(num)) errs.aOpen = 'Enter the balance as a number.';
+  else if (num < 0) errs.aOpen = 'Opening balance cannot be negative.';
+  else if (!/^\d+(\.\d{1,2})?$/.test(raw)) errs.aOpen = 'Use up to two decimal places.';
+  const od = fd.get('aDate') || '';
+  if (!od) errs.aDate = 'Select the date the account was opened.';
+  else if (od > todayISO()) errs.aDate = 'The opening date cannot be in the future.';
+  return errs;
+}
+function accountDialog(existing) {
+  const a = existing || { holder: '', type: 'Savings', opening: '', openedOn: todayISO() };
+  openDialog({
+    title: existing ? 'Edit account' : 'Create account',
+    body: `<form id="fm" class="form-grid" novalidate>
+      ${field('aHolder', 'Account holder name', 'text', a.holder, 'autocomplete="off" maxlength="80" required', 'full')}
+      ${select('aType', 'Account type', ACCOUNT_TYPES.map(t => [t, t]), a.type)}
+      ${field('aOpen', 'Opening balance (₹)', 'text', a.opening, 'inputmode="decimal" placeholder="0.00"')}
+      ${field('aDate', 'Opened on', 'date', a.openedOn, `max="${todayISO()}"`, 'full')}
+    </form>
+    ${existing ? '' : '<p class="help" style="margin-top:14px">The account number is generated automatically and shown masked.</p>'}`,
+    foot: `<button class="btn btn-ghost" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit" form="fm">${existing ? 'Save changes' : 'Create account'}</button>`,
+    submit: fd => {
+      const errs = validateAccount(fd);
+      if (Object.keys(errs).length) return setErrors(errs);
+      const data = {
+        holder: String(fd.get('aHolder')).trim().replace(/\s+/g, ' '),
+        type: fd.get('aType'),
+        opening: round2(Number(String(fd.get('aOpen')).replace(/[,\s₹]/g, ''))),
+        openedOn: fd.get('aDate'),
+      };
+      if (existing) Object.assign(existing, data);
+      else db.accounts.push({ id: uid(), number: newAccountNumber(), ...data });
+      persist();
+      $('#dlg').close();
+      toast(existing ? 'Account updated.' : 'Account created.');
+      render();
+    },
+  });
+}
+function deleteAccount(id) {
+  const a = db.accounts.find(x => x.id === id);
+  if (!a) return;
+  const n = db.transactions.filter(t => t.accountId === id).length;
+  confirmDialog({
+    title: 'Delete account?',
+    message: `Delete <strong>${esc(a.holder)}</strong> (${esc(a.number)})? ${n} transaction${n === 1 ? '' : 's'} linked to this account will also be deleted. This cannot be undone.`,
+    label: 'Delete account',
+    onYes: () => {
+      db.accounts = db.accounts.filter(x => x.id !== id);
+      db.transactions = db.transactions.filter(t => t.accountId !== id);
+      db.users.forEach(u => { u.accountIds = (u.accountIds || []).filter(x => x !== id); });
+      persist(); toast('Account deleted.'); render();
+    },
+  });
+}
+
+/* ---------- Transactions ---------- */
+function validateTx(fd) {
+  const errs = {};
+  if (!visibleAccounts().find(a => a.id === fd.get('tAcct'))) errs.tAcct = 'Select an account.';
+  const date = fd.get('tDate');
+  if (!date) errs.tDate = 'Enter the transaction date.';
+  else if (date > todayISO()) errs.tDate = 'The date cannot be in the future.';
+  if (!['Credit', 'Debit'].includes(fd.get('tType'))) errs.tType = 'Select Credit or Debit.';
+  const desc = String(fd.get('tDesc') || '').trim();
+  if (desc.length < 3) errs.tDesc = 'Enter a description of at least 3 characters.';
+  else if (desc.length > 100) errs.tDesc = 'Keep the description under 100 characters.';
+  const raw = String(fd.get('tAmt') || '').replace(/[,\s₹]/g, '');
+  const num = Number(raw);
+  if (raw === '') errs.tAmt = 'Enter an amount.';
+  else if (Number.isNaN(num)) errs.tAmt = 'Enter the amount as a number.';
+  else if (num <= 0) errs.tAmt = 'Amount must be greater than zero.';
+  else if (!/^\d+(\.\d{1,2})?$/.test(raw)) errs.tAmt = 'Use up to two decimal places, for example 2500.50.';
+  else if (num > 999999999) errs.tAmt = 'Amount is too large.';
+  return errs;
+}
+function cleanTx(fd) {
+  return {
+    accountId: fd.get('tAcct'),
+    date: fd.get('tDate'),
+    type: fd.get('tType'),
+    description: String(fd.get('tDesc')).trim(),
+    amount: round2(Number(String(fd.get('tAmt')).replace(/[,\s₹]/g, ''))),
+  };
+}
+function txDialog(seed, editingId) {
+  const accts = visibleAccounts();
+  if (!accts.length) { toast('Create an account before adding transactions.', 'error'); return; }
+  const v = seed || { accountId: accts[0].id, date: todayISO(), type: 'Credit', description: '', amount: '' };
+  openDialog({
+    title: editingId ? 'Edit transaction' : 'Add transaction',
+    body: `<form id="fm" class="form-grid" novalidate>
+      ${select('tAcct', 'Account', accts.map(a => [a.id, `${a.holder} (${a.number})`]), v.accountId, 'full')}
+      ${field('tDate', 'Date', 'date', v.date, `max="${todayISO()}"`)}
+      ${select('tType', 'Type', [['Credit', 'Credit (deposit)'], ['Debit', 'Debit (withdrawal)']], v.type)}
+      ${field('tAmt', 'Amount (₹)', 'text', v.amount, 'inputmode="decimal" placeholder="0.00"')}
+      ${field('tDesc', 'Description', 'text', v.description, 'maxlength="100" placeholder="For example, salary for May"', 'full')}
+    </form>`,
+    foot: `<button class="btn btn-ghost" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit" form="fm">Review</button>`,
+    submit: fd => {
+      const errs = validateTx(fd);
+      if (Object.keys(errs).length) return setErrors(errs);
+      showTxReview(cleanTx(fd), editingId);
+    },
+  });
+}
+function showTxReview(d, editingId) {
+  const acct = db.accounts.find(a => a.id === d.accountId);
+  openDialog({
+    title: 'Review transaction',
+    body: `<p class="help" style="margin-bottom:16px">Check the details before saving.</p>
+      <dl class="review">
+        <dt>Account</dt><dd>${esc(acct?.holder)} (${esc(acct?.number)})</dd>
+        <dt>Date</dt><dd>${fmtDate(d.date)}</dd>
+        <dt>Type</dt><dd><span class="pill ${d.type.toLowerCase()}">${d.type}</span></dd>
+        <dt>Amount</dt><dd><strong class="${d.type === 'Credit' ? 'amt-credit' : 'amt-debit'}">${inr(d.amount)}</strong></dd>
+        <dt>Description</dt><dd>${esc(d.description)}</dd>
+      </dl>`,
+    foot: `<button class="btn btn-ghost" type="button" data-back>Back to edit</button><button class="btn btn-primary" type="button" data-confirm>Confirm and save</button>`,
+    confirm: () => saveTx(d, editingId),
+    back: () => txDialog(d, editingId),
+  });
+}
+function saveTx(d, editingId) {
+  if (editingId) {
+    const t = db.transactions.find(x => x.id === editingId);
+    if (t) Object.assign(t, d);
+  } else {
+    db.transactions.push({ id: uid(), ...d, createdAt: Date.now() });
+  }
+  persist();
+  toast(editingId ? 'Transaction updated.' : 'Transaction saved.');
+  render();
+}
+function deleteTx(id) {
+  const t = db.transactions.find(x => x.id === id);
+  if (!t) return;
+  const acct = db.accounts.find(a => a.id === t.accountId);
+  confirmDialog({
+    title: 'Delete transaction?',
+    message: `This removes the ${t.type.toLowerCase()} of <strong>${inr(t.amount)}</strong> dated ${fmtDate(t.date)} (${esc(t.description)}) from ${esc(acct?.holder)}'s account. This cannot be undone.`,
+    label: 'Delete transaction',
+    onYes: () => {
+      db.transactions = db.transactions.filter(x => x.id !== id);
+      persist(); toast('Transaction deleted.'); render();
+    },
+  });
+}
+
+/* ---------- Views ---------- */
+const pageHead = (title, sub, actions = '') =>
+  `<div class="page-head"><div><h1>${title}</h1><p class="muted">${sub}</p></div>${actions ? `<div>${actions}</div>` : ''}</div>`;
+const stat = (label, value) => `<div class="card stat"><span class="label">${label}</span><strong class="value">${value}</strong></div>`;
+
+function txTable(list, showAccount, bal) {
+  if (!list.length) {
+    return `<div class="empty"><strong>No transactions yet</strong>${canEdit() ? 'Add a credit or debit to get started.' : 'Transactions appear here once they are recorded.'}</div>`;
+  }
+  const rows = list.map(t => {
+    const acct = db.accounts.find(a => a.id === t.accountId);
+    return `<tr>
+      <td style="white-space:nowrap">${fmtDate(t.date)}</td>
+      ${showAccount ? `<td>${esc(acct?.holder)}<div class="muted small">${esc(acct?.number)}</div></td>` : ''}
+      <td>${esc(t.description)}</td>
+      <td><span class="pill ${t.type.toLowerCase()}">${t.type}</span></td>
+      <td class="num amt-credit">${t.type === 'Credit' ? inr(t.amount) : '&mdash;'}</td>
+      <td class="num amt-debit">${t.type === 'Debit' ? inr(t.amount) : '&mdash;'}</td>
+      <td class="num">${inr(bal.get(t.id))}</td>
+      ${canEdit() ? `<td class="actions"><button class="btn btn-ghost btn-sm" type="button" data-action="edit-tx" data-id="${t.id}">Edit</button><button class="btn btn-danger btn-sm" type="button" data-action="del-tx" data-id="${t.id}">Delete</button></td>` : ''}
+    </tr>`;
+  }).join('');
+  return `<div class="table-wrap"><table>
+    <thead><tr><th scope="col">Date</th>${showAccount ? '<th scope="col">Account</th>' : ''}<th scope="col">Description</th><th scope="col">Type</th><th scope="col" class="num">Credit</th><th scope="col" class="num">Debit</th><th scope="col" class="num">Balance</th>${canEdit() ? '<th scope="col"><span class="sr-only">Actions</span></th>' : ''}</tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+}
+
+function viewDashboard() {
+  const accts = visibleAccounts();
+  const ids = new Set(accts.map(a => a.id));
+  const txs = db.transactions.filter(t => ids.has(t.accountId));
+  const credits = sumOf(txs.filter(t => t.type === 'Credit'));
+  const debits = sumOf(txs.filter(t => t.type === 'Debit'));
+  const combined = round2(accts.reduce((s, a) => s + balanceOf(a.id), 0));
+  const recent = [...txs].sort((a, b) => sortTx(b, a)).slice(0, 6);
+  return pageHead(`Welcome, ${esc(currentUser.name.split(' ')[0])}`, 'A summary of your accounts and recent activity.',
+    canEdit() && accts.length ? `<button class="btn btn-primary" type="button" data-action="new-tx">Add transaction</button>` : '') + `
+    <section class="stats section" aria-label="Summary">
+      ${stat('Accounts', accts.length)}
+      ${stat('Total credits', inr(credits))}
+      ${stat('Total debits', inr(debits))}
+      ${stat('Combined balance', inr(combined))}
+    </section>
+    <section class="card section">
+      <div class="card-head"><h2>Recent transactions</h2><a href="#transactions">View all</a></div>
+      ${txTable(recent, true, runningBalances())}
+    </section>`;
+}
+
+function viewAccounts() {
+  const list = visibleAccounts();
+  const head = pageHead('Accounts', 'Account holders and their account details.',
+    canEdit() ? `<button class="btn btn-primary" type="button" data-action="new-acct">Create account</button>` : '');
+  if (!list.length) {
+    return head + `<section class="card section"><div class="empty"><strong>No accounts</strong>${canEdit() ? 'Create an account to start recording transactions.' : 'No accounts are linked to your login yet. Contact the operator.'}</div></section>`;
+  }
+  const rows = list.map(a => `<tr>
+    <td><strong>${esc(a.holder)}</strong><div class="muted small">Opened ${fmtDate(a.openedOn)}</div></td>
+    <td style="font-variant-numeric:tabular-nums">${esc(a.number)}</td>
+    <td>${esc(a.type)}</td>
+    <td class="num">${inr(a.opening)}</td>
+    <td class="num"><strong>${inr(balanceOf(a.id))}</strong></td>
+    <td class="actions"><button class="btn btn-ghost btn-sm" type="button" data-action="statement" data-id="${a.id}">Statement</button>${canEdit() ? `<button class="btn btn-ghost btn-sm" type="button" data-action="edit-acct" data-id="${a.id}">Edit</button><button class="btn btn-danger btn-sm" type="button" data-action="del-acct" data-id="${a.id}">Delete</button>` : ''}</td>
+  </tr>`).join('');
+  return head + `<section class="card section"><div class="table-wrap"><table>
+    <thead><tr><th scope="col">Account holder</th><th scope="col">Account no.</th><th scope="col">Type</th><th scope="col" class="num">Opening</th><th scope="col" class="num">Current balance</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+    <tbody>${rows}</tbody></table></div></section>`;
+}
+
+function txListHtml() {
+  if (txFilter.from && txFilter.to && txFilter.from > txFilter.to) {
+    return '<div class="empty"><strong>Check the date range</strong>The "From" date is after the "To" date.</div>';
+  }
+  const ids = new Set(visibleAccounts().map(a => a.id));
+  const list = db.transactions
+    .filter(t => ids.has(t.accountId)
+      && (!txFilter.accountId || t.accountId === txFilter.accountId)
+      && (!txFilter.from || t.date >= txFilter.from)
+      && (!txFilter.to || t.date <= txFilter.to))
+    .sort((a, b) => sortTx(b, a));
+  return txTable(list, !txFilter.accountId, runningBalances());
+}
+
+function viewTransactions() {
+  const list = visibleAccounts();
+  const head = pageHead('Transactions', 'Record, review and correct deposits and withdrawals.',
+    canEdit() && list.length ? `<button class="btn btn-primary" type="button" data-action="new-tx">Add transaction</button>` : '');
+  const opts = `<option value="">All accounts</option>` + list.map(a =>
+    `<option value="${a.id}"${a.id === txFilter.accountId ? ' selected' : ''}>${esc(a.holder)} (${esc(a.number)})</option>`).join('');
+  return head + `<section class="card section">
+    <form class="toolbar" id="txFilter" role="search" aria-label="Filter transactions" onsubmit="return false">
+      <div class="field"><label for="fAcct">Account</label><select id="fAcct" name="accountId">${opts}</select></div>
+      <div class="field"><label for="fFrom">From</label><input id="fFrom" type="date" name="from" value="${txFilter.from}"></div>
+      <div class="field"><label for="fTo">To</label><input id="fTo" type="date" name="to" value="${txFilter.to}"></div>
+      <div class="actions-row"><button class="btn btn-ghost" type="button" data-action="clear-filter">Clear filters</button></div>
+    </form>
+    <div id="txList">${txListHtml()}</div>
+  </section>`;
+}
+
+function statementHtml(accountId, start, end) {
+  const acct = db.accounts.find(a => a.id === accountId);
+  if (!acct) return '';
+  const s = buildStatement(acct, start, end);
+  stmt.data = s;
+  const rows = s.rows.length
+    ? s.rows.map(r => `<tr>
+        <td style="white-space:nowrap">${fmtDate(r.date)}</td>
+        <td>${esc(r.description)}</td>
+        <td class="num amt-credit">${r.type === 'Credit' ? inr(r.amount) : '&mdash;'}</td>
+        <td class="num amt-debit">${r.type === 'Debit' ? inr(r.amount) : '&mdash;'}</td>
+        <td class="num">${inr(r.balance)}</td></tr>`).join('')
+    : `<tr><td colspan="5" class="empty">No transactions in this period.</td></tr>`;
+  return `<div class="out-actions">
+      <p class="muted small">Statement preview for the selected period.</p>
+      <button class="btn btn-primary" type="button" data-action="pdf">Download PDF</button>
+    </div>
+    <article class="doc" aria-labelledby="stmtTitle">
+      <div class="doc-top">
+        <div>
+          <div class="brand"><span class="brand-mark" aria-hidden="true">AS</span><span class="brand-name">Account Statement Generator</span></div>
+          <h2 id="stmtTitle" class="doc-title">Account statement</h2>
+        </div>
+        <dl class="kv">
+          <dt>Period</dt><dd>${fmtDate(start)} to ${fmtDate(end)}</dd>
+          <dt>Generated</dt><dd>${fmtDate(todayISO())}</dd>
+          <dt>Status</dt><dd><span class="pill role">Generated</span></dd>
+        </dl>
+      </div>
+      <div class="doc-parties">
+        <dl class="kv"><dt>Account holder</dt><dd>${esc(acct.holder)}</dd><dt>Account type</dt><dd>${esc(acct.type)}</dd></dl>
+        <dl class="kv"><dt>Account number</dt><dd style="font-variant-numeric:tabular-nums">${esc(acct.number)}</dd><dt>Opened on</dt><dd>${fmtDate(acct.openedOn)}</dd></dl>
+      </div>
+      <div class="summary">
+        <div><span>Opening balance</span><strong>${inr(s.opening)}</strong></div>
+        <div><span>Total credits</span><strong class="amt-credit">${inr(s.credits)}</strong></div>
+        <div><span>Total debits</span><strong class="amt-debit">${inr(s.debits)}</strong></div>
+        <div class="hl"><span>Closing balance</span><strong>${inr(s.closing)}</strong></div>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th scope="col">Date</th><th scope="col">Description</th><th scope="col" class="num">Credit</th><th scope="col" class="num">Debit</th><th scope="col" class="num">Balance</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><td colspan="2">Totals for period</td><td class="num amt-credit">${inr(s.credits)}</td><td class="num amt-debit">${inr(s.debits)}</td><td class="num">${inr(s.closing)}</td></tr></tfoot>
+      </table></div>
+      <p class="doc-foot">Opening balance plus total credits minus total debits equals the closing balance. This is a computer-generated statement.</p>
+    </article>`;
+}
+
+function viewStatement() {
+  const list = visibleAccounts();
+  if (!list.length) {
+    return pageHead('Statements', 'Generate an account statement for a date range.') +
+      `<section class="card section"><div class="empty"><strong>No accounts available</strong>${canEdit() ? 'Create an account before generating a statement.' : 'No accounts are linked to your login yet.'}</div></section>`;
+  }
+  const selected = list.find(a => a.id === stmt.accountId) || list[0];
+  const start = stmt.start || selected.openedOn;
+  const end = stmt.end || todayISO();
+  return pageHead('Statements', 'Choose an account and period, then download the statement as a PDF.') + `
+    <section class="card">
+      <form class="toolbar" id="stmtForm" novalidate>
+        <div class="field" data-field="sAcct"><label for="sAcct">Account</label><select id="sAcct" name="accountId">${list.map(a => `<option value="${a.id}"${a.id === selected.id ? ' selected' : ''}>${esc(a.holder)} (${esc(a.number)})</option>`).join('')}</select><p class="err"></p></div>
+        <div class="field" data-field="sStart"><label for="sStart">Start date</label><input id="sStart" type="date" name="start" value="${start}" max="${todayISO()}"><p class="err"></p></div>
+        <div class="field" data-field="sEnd"><label for="sEnd">End date</label><input id="sEnd" type="date" name="end" value="${end}" max="${todayISO()}"><p class="err"></p></div>
+        <div class="actions-row"><button class="btn btn-primary" type="submit">Generate statement</button></div>
+      </form>
+    </section>
+    <div id="stmtOut" class="section">${statementHtml(selected.id, start, end)}</div>`;
+}
+
+function viewLogin() {
+  return `<div class="login"><section class="card">
+    <div class="login-head"><span class="brand-mark" aria-hidden="true">AS</span><div><h1 style="font-size:22px">Sign in</h1><p class="muted small">Account Statement Generator</p></div></div>
+    <form id="loginForm" class="stack" novalidate>
+      ${field('lUser', 'Username', 'text', '', 'autocomplete="username" autocapitalize="none" spellcheck="false" required')}
+      ${field('lPass', 'Password', 'password', '', 'autocomplete="current-password" required')}
+      <p class="err" id="loginErr" role="alert"></p>
+      <button class="btn btn-primary btn-block" type="submit" id="loginBtn">Sign in</button>
+    </form>
+    <p class="auth-switch">New here? <a href="#register" data-auth="register">Create an account</a></p>
+    <div class="demo"><strong>Demo access</strong><p class="muted small" style="margin-top:4px">Sample data only. Use these accounts to explore the app.</p>
+      <dl><dt>Operator</dt><dd>operator / Operator@2026</dd><dt>Account holder</dt><dd>rahul / Rahul@2026</dd></dl>
+    </div>
+  </section></div>`;
+}
+
+function viewRegister() {
+  return `<div class="login"><section class="card">
+    <div class="login-head"><span class="brand-mark" aria-hidden="true">AS</span><div><h1 style="font-size:22px">Create account</h1><p class="muted small">Register as an Account Holder</p></div></div>
+    <div class="auth-note">This creates your application login. It does not create a bank account. An Operator can link your bank account after registration.</div>
+    <form id="registerForm" class="stack" style="margin-top:18px" novalidate>
+      ${field('rName', 'Full name', 'text', '', 'autocomplete="name" maxlength="70" required')}
+      ${field('rUsername', 'Username', 'text', '', 'autocomplete="username" autocapitalize="none" spellcheck="false" minlength="3" maxlength="24" required')}
+      ${field('rEmail', 'Email address', 'email', '', 'autocomplete="email" maxlength="120" required')}
+      ${field('rMobile', 'Mobile number', 'tel', '', 'autocomplete="tel" inputmode="numeric" maxlength="15" required')}
+      ${field('rPass', 'Password', 'password', '', 'autocomplete="new-password" minlength="8" required')}
+      ${field('rConfirm', 'Confirm password', 'password', '', 'autocomplete="new-password" minlength="8" required')}
+      <p class="help">Use at least 8 characters, including uppercase, lowercase and a number.</p>
+      <p class="err" id="registerErr" role="alert"></p>
+      <button class="btn btn-primary btn-block" type="submit" id="registerBtn">Create account</button>
+    </form>
+    <p class="auth-switch">Already registered? <a href="#login" data-auth="login">Sign in</a></p>
+  </section></div>`;
+}
+function render() {
+  const appbar = $('#appbar');
+  if (!currentUser) {
+    appbar.hidden = true;
+    const requested = location.hash.slice(1);
+    authView = requested === 'register' ? 'register' : 'login';
+    $('#view').innerHTML = authView === 'register' ? viewRegister() : viewLogin();
+    return;
+  }
+  appbar.hidden = false;
+  $('#uName').textContent = currentUser.name;
+  $('#uRole').textContent = currentUser.role;
+  let route = location.hash.slice(1);
+  if (!ROUTES.includes(route)) route = 'dashboard';
+  document.querySelectorAll('#nav a').forEach(a => {
+    if (a.dataset.route === route) a.setAttribute('aria-current', 'page');
+    else a.removeAttribute('aria-current');
+  });
+  const views = { dashboard: viewDashboard, accounts: viewAccounts, transactions: viewTransactions, statement: viewStatement };
+  $('#view').innerHTML = views[route]();
+}
+
+/* ---------- Sign in / out ---------- */
+async function handleLogin(fd) {
+  const errEl = $('#loginErr');
+  const btn = $('#loginBtn');
+  const u = String(fd.get('lUser') || '').trim().toLowerCase();
+  const p = String(fd.get('lPass') || '');
+  if (!u || !p) { errEl.textContent = 'Enter your username and password.'; return; }
+  if (Date.now() < loginLock.until) {
+    errEl.textContent = `Too many attempts. Try again in ${Math.ceil((loginLock.until - Date.now()) / 1000)} seconds.`;
+    return;
+  }
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  let user = null;
+  try {
+    const candidate = db.users.find(x => x.username === u);
+    if (candidate && await hashPassword(p, candidate.salt) === candidate.hash) user = candidate;
+  } catch (e) {
+    errEl.textContent = 'This browser cannot verify passwords. Open the app over HTTPS and try again.';
+    btn.disabled = false; btn.textContent = 'Sign in';
+    return;
+  }
+  if (!user) {
+    loginLock.fails++;
+    if (loginLock.fails >= 5) loginLock = { fails: 0, until: Date.now() + 30000 };
+    errEl.textContent = 'Incorrect username or password.';
+    btn.disabled = false; btn.textContent = 'Sign in';
+    return;
+  }
+  loginLock = { fails: 0, until: 0 };
+  currentUser = user;
+  writeSession(user.id);
+  location.hash = '#dashboard';
+  render();
+  toast(`Welcome, ${user.name}.`);
+}
+
+async function handleRegister(fd) {
+  const name = String(fd.get('rName') || '').trim();
+  const username = String(fd.get('rUsername') || '').trim().toLowerCase();
+  const email = String(fd.get('rEmail') || '').trim().toLowerCase();
+  const mobile = String(fd.get('rMobile') || '').replace(/[\s-]/g, '');
+  const password = String(fd.get('rPass') || '');
+  const confirm = String(fd.get('rConfirm') || '');
+  const errEl = $('#registerErr');
+  const btn = $('#registerBtn');
+  const errors = [];
+
+  if (name.length < 2) errors.push('Enter your full name.');
+  if (!/^[a-z0-9._-]{3,24}$/.test(username)) errors.push('Username must be 3–24 characters (letters, numbers, dot, underscore or hyphen).');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push('Enter a valid email address.');
+  if (!/^\+?[0-9]{10,15}$/.test(mobile)) errors.push('Enter a valid mobile number (10–15 digits).');
+  if (password.length < 8 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) errors.push('Password must have at least 8 characters, uppercase, lowercase and a number.');
+  if (password !== confirm) errors.push('Passwords do not match.');
+  if (db.users.some(u => (u.username || '').toLowerCase() === username)) errors.push('That username is already registered.');
+  if (db.users.some(u => (u.email || '').toLowerCase() === email)) errors.push('That email is already registered.');
+
+  if (errors.length) {
+    errEl.textContent = errors.join(' ');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Creating account…';
+  try {
+    const salt = uid();
+    const user = {
+      id: uid(), name, username, email, mobile,
+      role: 'Account Holder',
+      salt,
+      hash: await hashPassword(password, salt),
+      accountIds: []
+    };
+    db.users.push(user);
+    if (!persist()) {
+      db.users = db.users.filter(u => u.id !== user.id);
+      btn.disabled = false;
+      btn.textContent = 'Create account';
+      errEl.textContent = 'Could not save your account in this browser. Check browser storage and try again.';
+      return;
+    }
+    authView = 'login';
+    location.hash = '';
+    render();
+    toast('Registration successful. Please sign in.');
+  } catch (e) {
+    console.error(e);
+    errEl.textContent = 'Registration failed. Please try again.';
+    btn.disabled = false;
+    btn.textContent = 'Create account';
+  }
+}
+
+function logout() {
+  writeSession(null);
+  currentUser = null;
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { location.hash = ''; }
+  render();
+  toast('You have signed out.');
+}
+
+/* ---------- Statements ---------- */
+function generateStatement(form) {
+  const fd = new FormData(form);
+  const acct = visibleAccounts().find(a => a.id === fd.get('accountId'));
+  const start = fd.get('start') || '';
+  const end = fd.get('end') || '';
+  const errs = {};
+  if (!acct) errs.sAcct = 'Select an account.';
+  if (!start) errs.sStart = 'Select a start date.';
+  if (!end) errs.sEnd = 'Select an end date.';
+  if (start && end && start > end) errs.sEnd = 'The end date must be on or after the start date.';
+  setErrors(errs, form);
+  if (Object.keys(errs).length) return;
+  stmt = { accountId: acct.id, start, end, data: null };
+  $('#stmtOut').innerHTML = statementHtml(acct.id, start, end);
+  toast('Statement generated.');
+}
+
+function fitText(doc, text, max) {
+  let t = String(text);
+  if (doc.getTextWidth(t) <= max) return t;
+  while (t.length && doc.getTextWidth(t + '...') > max) t = t.slice(0, -1);
+  return t + '...';
+}
+function downloadPdf() {
+  const JsPDF = window.jspdf && window.jspdf.jsPDF;
+  const s = stmt.data;
+  if (!JsPDF || !s) { toast('The PDF library did not load. Check your connection and try again.', 'error'); return; }
+  const doc = new JsPDF({ unit: 'pt', format: 'a4' });
+  const L = 40, R = 555;
+  const INK = [19, 29, 42], MUTED = [90, 103, 121], CREDIT = [22, 113, 63], DEBIT = [163, 39, 29];
+  let y = 56;
+  doc.setTextColor(...INK); doc.setFont('helvetica', 'bold'); doc.setFontSize(20);
+  doc.text('Account Statement', L, y);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...MUTED);
+  doc.text('Account Statement Generator', L, y + 16);
+  doc.text(`Generated on ${fmtDate(todayISO())}`, R, y, { align: 'right' });
+  doc.text('Status: Generated', R, y + 16, { align: 'right' });
+  y += 34;
+  doc.setDrawColor(...INK); doc.setLineWidth(1.2); doc.line(L, y, R, y);
+  y += 24;
+  const info = [
+    ['Account holder', s.acct.holder], ['Account number', s.acct.number],
+    ['Account type', s.acct.type], ['Statement period', `${fmtDate(s.start)} to ${fmtDate(s.end)}`],
+  ];
+  info.forEach(([k, v], i) => {
+    const x = L + (i % 2) * 270, yy = y + Math.floor(i / 2) * 36;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...MUTED); doc.text(k.toUpperCase(), x, yy);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...INK); doc.text(String(v), x, yy + 14);
+  });
+  y += 84;
+  const boxes = [['Opening balance', s.opening, INK], ['Total credits', s.credits, CREDIT], ['Total debits', s.debits, DEBIT], ['Closing balance', s.closing, INK]];
+  const bw = (R - L) / 4;
+  doc.setFillColor(243, 246, 250); doc.rect(L, y, R - L, 50, 'F');
+  boxes.forEach(([k, v, c], i) => {
+    const x = L + i * bw + 10;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...MUTED); doc.text(k.toUpperCase(), x, y + 16);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...c); doc.text(plain(v), x, y + 36);
+  });
+  y += 78;
+  const header = () => {
+    doc.setFillColor(...INK); doc.rect(L, y, R - L, 22, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(255, 255, 255);
+    doc.text('DATE', L + 8, y + 14); doc.text('DESCRIPTION', L + 78, y + 14);
+    doc.text('CREDIT', 375, y + 14, { align: 'right' }); doc.text('DEBIT', 455, y + 14, { align: 'right' });
+    doc.text('BALANCE', R - 8, y + 14, { align: 'right' });
+    y += 22;
+  };
+  const ensure = h => { if (y + h > 790) { doc.addPage(); y = 50; header(); } };
+  header();
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+  if (!s.rows.length) { doc.setTextColor(...MUTED); doc.text('No transactions in this period.', L + 8, y + 18); y += 36; }
+  s.rows.forEach((r, i) => {
+    ensure(20);
+    if (i % 2 === 1) { doc.setFillColor(248, 250, 252); doc.rect(L, y, R - L, 20, 'F'); }
+    doc.setTextColor(...INK);
+    doc.text(fmtDate(r.date), L + 8, y + 13);
+    doc.text(fitText(doc, r.description, 205), L + 78, y + 13);
+    if (r.type === 'Credit') { doc.setTextColor(...CREDIT); doc.text(plain(r.amount), 375, y + 13, { align: 'right' }); }
+    else { doc.setTextColor(...DEBIT); doc.text(plain(r.amount), 455, y + 13, { align: 'right' }); }
+    doc.setTextColor(...INK);
+    doc.text(plain(r.balance), R - 8, y + 13, { align: 'right' });
+    y += 20;
+  });
+  ensure(34);
+  y += 6; doc.setDrawColor(...INK); doc.setLineWidth(1); doc.line(L, y, R, y); y += 16;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...INK);
+  doc.text('TOTALS FOR PERIOD', L + 8, y + 4);
+  doc.setTextColor(...CREDIT); doc.text(plain(s.credits), 375, y + 4, { align: 'right' });
+  doc.setTextColor(...DEBIT); doc.text(plain(s.debits), 455, y + 4, { align: 'right' });
+  doc.setTextColor(...INK); doc.text(plain(s.closing), R - 8, y + 4, { align: 'right' });
+  const pages = doc.getNumberOfPages();
+  for (let p = 1; p <= pages; p++) {
+    doc.setPage(p);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...MUTED);
+    doc.text('Computer-generated statement. Opening balance plus credits minus debits equals closing balance.', L, 820);
+    doc.text(`Page ${p} of ${pages}`, R, 820, { align: 'right' });
+  }
+  doc.save(`Statement_${s.acct.number}_${s.start}_${s.end}.pdf`);
+}
+
+/* ---------- Notices, events ---------- */
+function toast(msg, type = 'ok') {
+  const t = document.createElement('div');
+  t.className = 'toast' + (type === 'error' ? ' error' : '');
+  t.textContent = msg;
+  $('#toasts').appendChild(t);
+  setTimeout(() => t.remove(), 3800);
+}
+const EDIT_ACTIONS = ['new-tx', 'edit-tx', 'del-tx', 'new-acct', 'edit-acct', 'del-acct'];
+function onClick(e) {
+  const authLink = e.target.closest('[data-auth]');
+  if (authLink) {
+    e.preventDefault();
+    location.hash = authLink.dataset.auth === 'register' ? '#register' : '';
+    render();
+    return;
+  }
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  const act = el.dataset.action, id = el.dataset.id;
+  if (EDIT_ACTIONS.includes(act) && !canEdit()) return;
+  switch (act) {
+    case 'logout': return logout();
+    case 'new-tx': return txDialog();
+    case 'edit-tx': {
+      const t = db.transactions.find(x => x.id === id);
+      if (t) txDialog({ accountId: t.accountId, date: t.date, type: t.type, description: t.description, amount: t.amount }, id);
+      return;
+    }
+    case 'del-tx': return deleteTx(id);
+    case 'new-acct': return accountDialog();
+    case 'edit-acct': { const a = db.accounts.find(x => x.id === id); if (a) accountDialog(a); return; }
+    case 'del-acct': return deleteAccount(id);
+    case 'statement':
+      e.preventDefault();
+      stmt = { accountId: id, start: null, end: null, data: null };
+      if (location.hash === '#statement') render(); else location.hash = '#statement';
+      return;
+    case 'pdf': return downloadPdf();
+    case 'clear-filter':
+      txFilter = { accountId: '', from: '', to: '' };
+      return render();
+  }
+}
+function onChange(e) {
+  if (!e.target.closest('#txFilter')) return;
+  const f = new FormData($('#txFilter'));
+  txFilter = { accountId: f.get('accountId') || '', from: f.get('from') || '', to: f.get('to') || '' };
+  $('#txList').innerHTML = txListHtml();
+}
+function onSubmit(e) {
+  if (e.target.closest('dialog')) return;
+  if (e.target.id === 'loginForm') { e.preventDefault(); handleLogin(new FormData(e.target)); return; }
+  if (e.target.id === 'registerForm') { e.preventDefault(); handleRegister(new FormData(e.target)); return; }
+  if (e.target.id === 'stmtForm') { e.preventDefault(); generateStatement(e.target); }
+}
+
+init().catch(err => {
+  console.error(err);
+  $('#view').innerHTML = '<div class="empty"><strong>The application could not start</strong>Check that this browser allows local storage, then reload the page.</div>';
+});
+})();
+</script>
+
+</body></html>
